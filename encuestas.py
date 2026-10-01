@@ -97,7 +97,7 @@ TONE = {
 
 TONE_COLORS = {
     "excelente": "#2f6b4f",
-    "buena": "#3d7a6a",
+    "buena": "#0072b2",
     "regular": "#c0841a",
     "deficiente": "#b33a32",
     "sin-opinion": "#8a8176",

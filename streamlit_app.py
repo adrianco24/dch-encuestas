@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from html import escape
 from pathlib import Path
 
 import altair as alt
@@ -35,6 +36,15 @@ def load_from_path(path: Path) -> dict:
     return parse_survey(df, path.name)
 
 
+def load_from_uploads(uploads) -> dict:
+    datasets = [load_from_bytes(upload.getvalue(), upload.name) for upload in uploads]
+    return {
+        "fuente": " + ".join(dataset["fuente"] for dataset in datasets),
+        "registros": [record for dataset in datasets for record in dataset["registros"]],
+        "encuestas_origen": sum(dataset["encuestas_origen"] for dataset in datasets),
+    }
+
+
 def bar_chart(rows: list[tuple[str, int]]) -> alt.Chart:
     total = sum(n for _, n in rows) or 1
     frame = pd.DataFrame(
@@ -58,11 +68,119 @@ def bar_chart(rows: list[tuple[str, int]]) -> alt.Chart:
     )
 
 
+def overview_chart(records: list[dict]) -> alt.Chart | None:
+    chart_rows = []
+    question_order = []
+    answer_labels = []
+
+    for question in QUESTIONS:
+        answers = count_answers(records, question["id"])
+        total = sum(count for _, count in answers)
+        if not total:
+            continue
+
+        question_label = f"{question['short']} (n={total})"
+        question_order.append(question_label)
+        for answer, count in answers:
+            if answer not in answer_labels:
+                answer_labels.append(answer)
+            chart_rows.append(
+                {
+                    "Pregunta": question_label,
+                    "Respuesta": answer,
+                    "Cantidad": count,
+                    "Proporcion": count / total,
+                    "Porcentaje": round(100 * count / total),
+                }
+            )
+
+    if not chart_rows:
+        return None
+
+    colors = [TONE_COLORS.get(answer_tone(label), TONE_COLORS["neutro"]) for label in answer_labels]
+    frame = pd.DataFrame(chart_rows)
+    return (
+        alt.Chart(frame)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "Proporcion:Q",
+                stack="zero",
+                scale=alt.Scale(domain=[0, 1]),
+                axis=alt.Axis(format="%", values=[0, 0.25, 0.5, 0.75, 1], title="Porcentaje"),
+            ),
+            y=alt.Y("Pregunta:N", sort=question_order, title=None),
+            color=alt.Color(
+                "Respuesta:N",
+                scale=alt.Scale(domain=answer_labels, range=colors),
+                legend=alt.Legend(title="Respuesta", orient="bottom", columns=5),
+            ),
+            tooltip=[
+                alt.Tooltip("Pregunta:N", title="Pregunta"),
+                alt.Tooltip("Respuesta:N", title="Respuesta"),
+                alt.Tooltip("Cantidad:Q", title="Respuestas"),
+                alt.Tooltip("Porcentaje:Q", title="Porcentaje", format=".0f"),
+            ],
+        )
+        .properties(height=max(300, 36 * len(question_order)))
+    )
+
+
+def answer_summary(rows: list[tuple[str, int]], total: int) -> str:
+    tints = {
+        "excelente": "#e5eee8",
+        "buena": "#e5eff7",
+        "regular": "#f5eddc",
+        "deficiente": "#f4e5e2",
+        "sin-opinion": "#eeeae5",
+        "neutro": "#eeeae5",
+    }
+    items = []
+    for index, (label, count) in enumerate(sorted(rows, key=lambda row: row[1], reverse=True)):
+        tone = answer_tone(label)
+        color = TONE_COLORS.get(tone, TONE_COLORS["neutro"])
+        tint = tints.get(tone, tints["neutro"])
+        percentage = round(100 * count / total)
+        leading = " leading" if index == 0 else ""
+        items.append(
+            f'<div class="summary-item{leading}" style="--answer-color:{color};--answer-tint:{tint}">'
+            f'<span class="summary-label">{escape(label)}</span>'
+            f'<strong>{count} <span>({percentage}%)</span></strong></div>'
+        )
+    return f'<div class="answer-summary">{"".join(items)}</div>'
+
+
 st.markdown(
     """
     <style>
       .block-container { padding-top: 1.4rem; }
       h1, h2, h3 { font-weight: 650; }
+            .answer-summary {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+                gap: 8px;
+                margin: 14px 0 8px;
+            }
+            .summary-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                padding: 8px 10px;
+                border-left: 3px solid var(--answer-color);
+                background: var(--answer-tint);
+                font-size: 0.9rem;
+            }
+            .summary-label { min-width: 0; overflow-wrap: anywhere; }
+            .summary-item strong {
+                flex: 0 0 auto;
+                color: var(--answer-color);
+                white-space: nowrap;
+            }
+            .summary-item strong span { font-size: 0.85em; font-weight: 600; }
+            .summary-item.leading { padding-block: 10px; font-size: 0.97rem; }
+            .summary-item.leading strong { font-size: 1.08rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -70,17 +188,21 @@ st.markdown(
 
 with st.sidebar:
     st.title("Encuestas DCH")
-    st.caption("Cada vez que bajes un Excel de resultados, subilo acá. El archivo puede cambiar de año o de cantidad de docentes.")
-    uploaded = st.file_uploader("Archivo de resultados", type=["xlsx", "xls"])
+    st.caption("Cargá uno o varios Excel de resultados.")
+    uploads = st.file_uploader(
+        "Agregar archivos de resultados",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+    )
     use_sample = False
-    if uploaded is None and SAMPLE.exists():
+    if not uploads and SAMPLE.exists():
         use_sample = st.checkbox("Usar anuales2023.xlsx de ejemplo", value=True)
 
 data = None
 error = None
-if uploaded is not None:
+if uploads:
     try:
-        data = load_from_bytes(uploaded.getvalue(), uploaded.name)
+        data = load_from_uploads(uploads)
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
 elif use_sample:
@@ -104,24 +226,33 @@ with st.sidebar:
     st.metric("Evaluaciones", len(records))
     st.metric("Docentes", len(teachers))
     st.caption(f"Origen: {data['fuente']} · {data['encuestas_origen']} filas")
-    query = st.text_input("Buscar docente")
-    filtered = teachers
-    if query.strip():
-        q = query.strip().casefold()
-        filtered = [
-            t
-            for t in teachers
-            if q in t["nombre"].casefold() or any(q in c.casefold() for c in t["cargos"])
-        ]
-    labels = [
-        f"{t['nombre']} ({', '.join(t['cargos']) or 's/cargo'}) — {t['respuestas']} resp."
-        for t in filtered
+
+st.subheader("Seleccionar docente")
+search_col, teacher_col = st.columns([1, 1.6])
+with search_col:
+    query = st.text_input("Buscar docente", placeholder="Nombre o cargo")
+filtered = teachers
+if query.strip():
+    q = query.strip().casefold()
+    filtered = [
+        teacher
+        for teacher in teachers
+        if q in teacher["nombre"].casefold()
+        or any(q in cargo.casefold() for cargo in teacher["cargos"])
     ]
-    choice = st.selectbox("Docente", options=["— Elegí un docente —"] + labels)
+labels = [
+    f"{teacher['nombre']} ({', '.join(teacher['cargos']) or 's/cargo'}) — {teacher['respuestas']} resp."
+    for teacher in filtered
+]
+with teacher_col:
+    choice = st.selectbox(
+        "Docente",
+        options=["— Elegí un docente —"] + labels,
+    )
 
 if choice == "— Elegí un docente —":
     st.header("Resultados de encuestas")
-    st.write("Elegí un docente en la barra lateral para ver las respuestas agrupadas por pregunta.")
+    st.write("Elegí un docente arriba para ver las respuestas agrupadas por pregunta.")
     st.dataframe(
         pd.DataFrame(
             [
@@ -142,7 +273,9 @@ if choice == "— Elegí un docente —":
 selected = filtered[labels.index(choice)]
 selected_records = [r for r in records if r["docenteClave"] == selected["clave"]]
 subject_options = sorted({r["concepto"] for r in selected_records}, key=lambda s: s.casefold())
-subject = st.selectbox("Cátedra / comisión", ["Todas las cátedras"] + subject_options)
+subject_col, _ = st.columns([1, 1.6])
+with subject_col:
+    subject = st.selectbox("Cátedra / comisión", ["Todas las cátedras"] + subject_options)
 visible = (
     selected_records
     if subject == "Todas las cátedras"
@@ -157,6 +290,18 @@ c1.metric("Respuestas", len(visible))
 c2.metric("Cátedras", selected["materias"] if subject == "Todas las cátedras" else 1)
 c3.metric("Preguntas", len(QUESTIONS))
 
+st.subheader("Resumen de respuestas")
+st.caption(
+    "Distribución porcentual por pregunta. El total de respuestas aparece junto al nombre; "
+    "pasá el cursor para ver cantidades y porcentajes."
+)
+overview = overview_chart(visible)
+if overview is None:
+    st.info("No hay respuestas para mostrar en este recorte.")
+else:
+    st.altair_chart(overview, use_container_width=True)
+
+st.subheader("Detalle por pregunta")
 ejes: list[str] = []
 for question in QUESTIONS:
     if question["eje"] not in ejes:
@@ -173,8 +318,8 @@ for eje in ejes:
                 st.write("Sin respuestas en este recorte.")
             else:
                 total = sum(n for _, n in rows)
+                st.markdown(answer_summary(rows, total), unsafe_allow_html=True)
                 st.altair_chart(bar_chart(rows), use_container_width=True)
-                st.caption(" · ".join(f"{label}: {n} ({round(100 * n / total)}%)" for label, n in rows))
 
 st.subheader("Cátedras evaluadas")
 st.dataframe(
