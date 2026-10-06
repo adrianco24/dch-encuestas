@@ -23,10 +23,11 @@ from encuestas import (
 st.set_page_config(page_title="Encuestas DCH", page_icon="📋", layout="wide")
 
 SAMPLE = Path(__file__).resolve().parent / "anuales2023.xlsx"
+PARSER_CACHE_VERSION = 2
 
 
 @st.cache_data(show_spinner="Leyendo y agrupando el archivo…")
-def load_from_bytes(file_bytes: bytes, filename: str) -> dict:
+def load_from_bytes(file_bytes: bytes, filename: str, parser_version: int) -> dict:
     df = pd.read_excel(io.BytesIO(file_bytes))
     return parse_survey(df, filename)
 
@@ -37,7 +38,10 @@ def load_from_path(path: Path) -> dict:
 
 
 def load_from_uploads(uploads) -> dict:
-    datasets = [load_from_bytes(upload.getvalue(), upload.name) for upload in uploads]
+    datasets = [
+        load_from_bytes(upload.getvalue(), upload.name, PARSER_CACHE_VERSION)
+        for upload in uploads
+    ]
     questions = {
         question["id"]: question
         for dataset in datasets
