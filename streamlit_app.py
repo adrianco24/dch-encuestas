@@ -220,7 +220,11 @@ with st.sidebar:
             accept_multiple_files=True,
             key="legacy_format_files",
         )
-        if st.button("Cargar nuevo formato 2024", use_container_width=True):
+        if st.button(
+            "Cargar nuevo formato 2024",
+            use_container_width=True,
+            type="primary",
+        ):
             st.session_state.new_format_upload = True
             st.rerun()
     use_sample = False
