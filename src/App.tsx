@@ -153,20 +153,40 @@ export default function App() {
                         {rows.length === 0 ? (
                           <p>Sin respuestas en este recorte.</p>
                         ) : (
-                          rows.map(([label, n]) => (
-                            <div key={label} className="bar-row">
-                              <span>{label}</span>
-                              <div className="track">
-                                <div
-                                  className={`fill ${answerTone(label)}`}
-                                  style={{ width: `${total ? (n / total) * 100 : 0}%` }}
-                                />
-                              </div>
-                              <span>
-                                {n} ({total ? Math.round((n / total) * 100) : 0}%)
-                              </span>
+                          <>
+                            <div className="answer-summary" aria-label="Resumen de respuestas">
+                              {rows.map(([label, n], index) => {
+                                const percentage = total ? Math.round((n / total) * 100) : 0;
+                                return (
+                                  <div
+                                    key={label}
+                                    className={`summary-item ${answerTone(label)}${index === 0 ? " leading" : ""}`}
+                                  >
+                                    <span className="summary-label">{label}</span>
+                                    <strong>
+                                      {n} <span>({percentage}%)</span>
+                                    </strong>
+                                  </div>
+                                );
+                              })}
                             </div>
-                          ))
+                            <div className="answer-bars">
+                              {rows.map(([label, n]) => (
+                                <div key={label} className="bar-row">
+                                  <span>{label}</span>
+                                  <div className="track">
+                                    <div
+                                      className={`fill ${answerTone(label)}`}
+                                      style={{ width: `${total ? (n / total) * 100 : 0}%` }}
+                                    />
+                                  </div>
+                                  <span>
+                                    {n} ({total ? Math.round((n / total) * 100) : 0}%)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
                         )}
                       </article>
                     );

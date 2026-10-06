@@ -203,6 +203,62 @@ select {
   font-size: 0.92rem;
 }
 
+.answer-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--answer-color);
+  background: var(--answer-tint);
+  font-size: 0.88rem;
+}
+
+.summary-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summary-item strong {
+  flex: 0 0 auto;
+  color: var(--answer-color);
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.summary-item strong span {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.summary-item.leading {
+  padding-block: 10px;
+  font-size: 0.95rem;
+}
+
+.summary-item.leading strong {
+  font-size: 1.05rem;
+}
+
+.summary-item.excelente { --answer-color: var(--excellent); --answer-tint: #e5eee8; }
+.summary-item.buena { --answer-color: var(--good); --answer-tint: #e5efec; }
+.summary-item.regular { --answer-color: var(--regular); --answer-tint: #f5eddc; }
+.summary-item.deficiente { --answer-color: var(--poor); --answer-tint: #f4e5e2; }
+.summary-item.sin-opinion,
+.summary-item.neutro { --answer-color: var(--none); --answer-tint: #eeeae5; }
+
+.answer-bars {
+  padding-top: 2px;
+}
+
 .bar-row {
   display: grid;
   grid-template-columns: 150px 1fr 52px;

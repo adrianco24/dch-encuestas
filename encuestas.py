@@ -86,12 +86,16 @@ TONE = {
     "muy buena": "excelente",
     "en general si": "excelente",
     "estrictamente": "excelente",
+    "siempre": "excelente",
     "buena": "buena",
     "medianamente": "buena",
+    "con frecuencia": "buena",
     "regular": "regular",
     "poco": "regular",
+    "poco frecuente": "regular",
     "deficiente": "deficiente",
     "no": "deficiente",
+    "nunca": "deficiente",
     "no opina": "sin-opinion",
 }
 
@@ -132,20 +136,51 @@ def _find_col(columns: list[Any], *needles: str) -> int | None:
     return None
 
 
-def _question_id_for(col_name: object) -> str | None:
+def _question_id_for(
+    col_name: object, questions: list[dict[str, str]] = QUESTIONS
+) -> str | None:
     if _is_code_col(col_name) or _is_teacher_col(col_name):
         return None
     col_n = _norm_text(col_name)
+    col_n = re.sub(r"^\d+\.\s*", "", col_n)
     if not col_n:
         return None
     best: tuple[int, str] | None = None
-    for question in QUESTIONS:
+    for question in questions:
         qn = _norm_text(question["text"])
         if col_n.startswith(qn[:48]) or qn[:48] in col_n:
             score = min(len(col_n), len(qn))
             if best is None or score > best[0]:
                 best = (score, question["id"])
     return best[1] if best else None
+
+
+def _questions_for(columns: list[Any]) -> list[dict[str, str]]:
+    numbered: dict[int, str] = {}
+    for column in columns:
+        if _is_code_col(column) or _is_teacher_col(column):
+            continue
+        label = re.sub(r"\.\d+$", "", str(column)).strip()
+        match = re.match(r"^(\d+)\.\s*(.+)$", label)
+        if match:
+            numbered.setdefault(int(match.group(1)), match.group(2).strip())
+
+    if len(numbered) < 15:
+        return QUESTIONS
+
+    questions = []
+    for number, text in sorted(numbered.items()):
+        if number <= 12:
+            eje = "Enseñanza y recursos"
+        elif number <= 21:
+            eje = "Acompañamiento y evaluación"
+        else:
+            eje = "Cumplimiento"
+        short = text if len(text) <= 64 else f"{text[:61].rstrip()}..."
+        questions.append(
+            {"id": f"pregunta_{number}", "eje": eje, "short": short, "text": text}
+        )
+    return questions
 
 
 def norm_label(value: object) -> str | None:
@@ -179,7 +214,9 @@ def answer_tone(label: str) -> str:
     return TONE.get(answer_key(label), "neutro")
 
 
-def _teacher_slots(columns: list[Any]) -> list[dict[str, Any]]:
+def _teacher_slots(
+    columns: list[Any], questions: list[dict[str, str]]
+) -> list[dict[str, Any]]:
     teacher_idxs = [i for i, name in enumerate(columns) if _is_teacher_col(name)]
     date_idx = _find_col(columns, "fecha de inicio", "fecha fin")
     slots: list[dict[str, Any]] = []
@@ -187,7 +224,7 @@ def _teacher_slots(columns: list[Any]) -> list[dict[str, Any]]:
         end = teacher_idxs[i + 1] if i + 1 < len(teacher_idxs) else (date_idx if date_idx is not None else len(columns))
         mapping: dict[str, int] = {}
         for col_i in range(t_idx + 1, end):
-            qid = _question_id_for(columns[col_i])
+            qid = _question_id_for(columns[col_i], questions)
             if qid and qid not in mapping:
                 mapping[qid] = col_i
         slots.append({"teacher_col": t_idx, "questions": mapping})
@@ -196,6 +233,7 @@ def _teacher_slots(columns: list[Any]) -> list[dict[str, Any]]:
 
 def parse_survey(df: pd.DataFrame, fuente: str = "") -> dict[str, Any]:
     columns = list(df.columns)
+    questions = _questions_for(columns)
     concepto_idx = _find_col(columns, "concepto evaluado")
     if concepto_idx is None:
         raise ValueError(
@@ -204,7 +242,7 @@ def parse_survey(df: pd.DataFrame, fuente: str = "") -> dict[str, Any]:
         )
     fecha_inicio_idx = _find_col(columns, "fecha de inicio")
     fecha_fin_idx = _find_col(columns, "fecha fin")
-    slots = _teacher_slots(columns)
+    slots = _teacher_slots(columns, questions)
     if not slots:
         raise ValueError("No encontré columnas de 'Elemento evaluado' (docentes).")
 
@@ -253,7 +291,7 @@ def parse_survey(df: pd.DataFrame, fuente: str = "") -> dict[str, Any]:
 
     return {
         "fuente": fuente,
-        "preguntas": QUESTIONS,
+        "preguntas": questions,
         "registros": records,
         "encuestas_origen": int(df.shape[0]),
     }

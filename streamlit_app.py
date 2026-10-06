@@ -38,10 +38,16 @@ def load_from_path(path: Path) -> dict:
 
 def load_from_uploads(uploads) -> dict:
     datasets = [load_from_bytes(upload.getvalue(), upload.name) for upload in uploads]
+    questions = {
+        question["id"]: question
+        for dataset in datasets
+        for question in dataset["preguntas"]
+    }
     return {
         "fuente": " + ".join(dataset["fuente"] for dataset in datasets),
         "registros": [record for dataset in datasets for record in dataset["registros"]],
         "encuestas_origen": sum(dataset["encuestas_origen"] for dataset in datasets),
+        "preguntas": list(questions.values()),
     }
 
 
@@ -68,12 +74,14 @@ def bar_chart(rows: list[tuple[str, int]]) -> alt.Chart:
     )
 
 
-def overview_chart(records: list[dict]) -> alt.Chart | None:
+def overview_chart(
+    records: list[dict], questions: list[dict]
+) -> alt.Chart | None:
     chart_rows = []
     question_order = []
     answer_labels = []
 
-    for question in QUESTIONS:
+    for question in questions:
         answers = count_answers(records, question["id"])
         total = sum(count for _, count in answers)
         if not total:
@@ -189,11 +197,28 @@ st.markdown(
 with st.sidebar:
     st.title("Encuestas DCH")
     st.caption("Cargá uno o varios Excel de resultados.")
-    uploads = st.file_uploader(
-        "Agregar archivos de resultados",
-        type=["xlsx", "xls"],
-        accept_multiple_files=True,
-    )
+    if "new_format_upload" not in st.session_state:
+        st.session_state.new_format_upload = False
+    if st.session_state.new_format_upload:
+        uploads = st.file_uploader(
+            "Archivo de encuestas formato 2024",
+            type=["xlsx", "xls"],
+            accept_multiple_files=True,
+            key="new_format_files",
+        )
+        if st.button("Volver a carga anterior", use_container_width=True):
+            st.session_state.new_format_upload = False
+            st.rerun()
+    else:
+        uploads = st.file_uploader(
+            "Agregar archivos de resultados",
+            type=["xlsx", "xls"],
+            accept_multiple_files=True,
+            key="legacy_format_files",
+        )
+        if st.button("Cargar nuevo formato 2024", use_container_width=True):
+            st.session_state.new_format_upload = True
+            st.rerun()
     use_sample = False
     if not uploads and SAMPLE.exists():
         use_sample = st.checkbox("Usar anuales2023.xlsx de ejemplo", value=True)
@@ -220,6 +245,7 @@ if data is None:
     st.stop()
 
 records = data["registros"]
+data_questions = data["preguntas"]
 teachers = teachers_from(records)
 
 with st.sidebar:
@@ -288,14 +314,14 @@ st.caption(" · ".join(selected["cargos"]) if selected["cargos"] else "Sin cargo
 c1, c2, c3 = st.columns(3)
 c1.metric("Respuestas", len(visible))
 c2.metric("Cátedras", selected["materias"] if subject == "Todas las cátedras" else 1)
-c3.metric("Preguntas", len(QUESTIONS))
+c3.metric("Preguntas", len(data_questions))
 
 st.subheader("Resumen de respuestas")
 st.caption(
     "Distribución porcentual por pregunta. El total de respuestas aparece junto al nombre; "
     "pasá el cursor para ver cantidades y porcentajes."
 )
-overview = overview_chart(visible)
+overview = overview_chart(visible, data_questions)
 if overview is None:
     st.info("No hay respuestas para mostrar en este recorte.")
 else:
@@ -303,13 +329,13 @@ else:
 
 st.subheader("Detalle por pregunta")
 ejes: list[str] = []
-for question in QUESTIONS:
+for question in data_questions:
     if question["eje"] not in ejes:
         ejes.append(question["eje"])
 
 for eje in ejes:
     st.subheader(eje)
-    for question in (q for q in QUESTIONS if q["eje"] == eje):
+    for question in (q for q in data_questions if q["eje"] == eje):
         rows = count_answers(visible, question["id"])
         with st.container(border=True):
             st.markdown(f"**{question['short']}**")
