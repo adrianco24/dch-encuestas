@@ -217,52 +217,47 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+FORMATS = {
+    "2020": {
+        "label": "Formato 2020",
+        "uploader": "Archivo de encuestas formato 2020",
+        "types": ["xlsx"],
+        "help": "Libro Excel 2020 con las hojas Anuales, Primer Cuatrimestre y Segundo_Cuatrimestre.",
+    },
+    "2023": {
+        "label": "Formato 2023",
+        "uploader": "Archivos de encuestas formato 2023",
+        "types": ["xlsx", "xls"],
+        "help": "Exportación de resultados usada hasta 2023.",
+    },
+    "2024": {
+        "label": "Nuevo formato (desde 2024)",
+        "uploader": "Archivos de encuestas desde 2024",
+        "types": ["xlsx", "xls"],
+        "help": "Exportación con preguntas numeradas, disponible desde 2024.",
+    },
+}
+
 with st.sidebar:
     st.title("Encuestas DCH")
-    st.caption("Cargá uno o varios Excel de resultados.")
-    if "survey_upload_format" not in st.session_state:
-        st.session_state.survey_upload_format = (
-            "2024" if st.session_state.get("new_format_upload", False) else "legacy"
-        )
-    upload_format = st.session_state.survey_upload_format
-
-    if upload_format == "2024":
-        uploads = st.file_uploader(
-            "Archivo de encuestas formato 2024",
-            type=["xlsx", "xls"],
-            accept_multiple_files=True,
-            key="new_format_files",
-        )
-        if st.button("Volver a carga anterior", use_container_width=True):
-            st.session_state.survey_upload_format = "legacy"
-            st.rerun()
-    elif upload_format == "2020":
-        uploads = st.file_uploader(
-            "Archivo de encuestas formato 2020",
-            type=["xlsx"],
-            accept_multiple_files=True,
-            key="2020_format_files",
-            help="Seleccioná el libro Excel 2020 con las hojas Anuales, Primer Cuatrimestre y Segundo_Cuatrimestre.",
-        )
-        if st.button("Volver a carga anterior", use_container_width=True):
-            st.session_state.survey_upload_format = "legacy"
-            st.rerun()
-    else:
-        uploads = st.file_uploader(
-            "Agregar archivos de resultados",
-            type=["xlsx", "xls"],
-            accept_multiple_files=True,
-            key="legacy_format_files",
-        )
-        format_col, year_col = st.columns(2)
-        if format_col.button("Formato 2024", use_container_width=True, type="primary"):
-            st.session_state.survey_upload_format = "2024"
-            st.rerun()
-        if year_col.button("Encuesta 2020", use_container_width=True):
-            st.session_state.survey_upload_format = "2020"
-            st.rerun()
+    st.caption("Elegí el formato del Excel que vas a cargar.")
+    upload_format = st.radio(
+        "Formato de la encuesta",
+        options=list(FORMATS),
+        format_func=lambda key: FORMATS[key]["label"],
+        index=1,
+        key="survey_upload_format",
+    )
+    fmt = FORMATS[upload_format]
+    uploads = st.file_uploader(
+        fmt["uploader"],
+        type=fmt["types"],
+        accept_multiple_files=True,
+        key=f"files_{upload_format}",
+        help=fmt["help"],
+    )
     use_sample = False
-    if upload_format != "2020" and not uploads and SAMPLE.exists():
+    if upload_format == "2023" and not uploads and SAMPLE.exists():
         use_sample = st.checkbox("Usar anuales2023.xlsx de ejemplo", value=True)
 
 data = None
