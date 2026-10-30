@@ -306,11 +306,11 @@ def teachers_from(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "clave": rec["docenteClave"],
                 "nombre": rec["docente"],
                 "cargos": set(),
-                "respuestas": 0,
+                "registros": [],
                 "materias": set(),
             },
         )
-        entry["respuestas"] += 1
+        entry["registros"].append(rec)
         if rec.get("cargo"):
             entry["cargos"].add(rec["cargo"])
         entry["materias"].add(rec["concepto"])
@@ -321,7 +321,7 @@ def teachers_from(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "clave": entry["clave"],
                 "nombre": entry["nombre"],
                 "cargos": sorted(entry["cargos"]),
-                "respuestas": entry["respuestas"],
+                "respuestas": response_count(entry["registros"]),
                 "materias": len(entry["materias"]),
             }
         )
@@ -335,15 +335,32 @@ def count_answers(records: list[dict[str, Any]], question_id: str) -> list[tuple
         label = rec["respuestas"].get(question_id)
         if not label:
             continue
-        counts[label] = counts.get(label, 0) + 1
+        counts[label] = counts.get(label, 0) + rec.get("cantidad", 1)
     return sorted(counts.items(), key=lambda item: item[1], reverse=True)
 
 
+def response_count(records: list[dict[str, Any]]) -> int:
+    grouped: dict[tuple[str, str], dict[str, int]] = {}
+    for record in records:
+        question_counts = grouped.setdefault(
+            (record["docenteClave"], record["concepto"]), {}
+        )
+        for question_id in record["respuestas"]:
+            question_counts[question_id] = (
+                question_counts.get(question_id, 0) + record.get("cantidad", 1)
+            )
+    return sum(max(counts.values(), default=0) for counts in grouped.values())
+
+
 def subjects_of(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    counts: dict[str, int] = {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for rec in records:
-        counts[rec["concepto"]] = counts.get(rec["concepto"], 0) + 1
+        grouped.setdefault(rec["concepto"], []).append(rec)
     return [
-        {"concepto": concepto, "n": n}
-        for concepto, n in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+        {"concepto": concepto, "n": response_count(group)}
+        for concepto, group in sorted(
+            grouped.items(),
+            key=lambda item: response_count(item[1]),
+            reverse=True,
+        )
     ]

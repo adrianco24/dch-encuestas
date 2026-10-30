@@ -16,14 +16,16 @@ from encuestas import (
     answer_tone,
     count_answers,
     parse_survey,
+    response_count,
     subjects_of,
     teachers_from,
 )
+from encuestas_2020 import parse_survey_2020
 
 st.set_page_config(page_title="Encuestas DCH", page_icon="📋", layout="wide")
 
 SAMPLE = Path(__file__).resolve().parent / "anuales2023.xlsx"
-PARSER_CACHE_VERSION = 2
+PARSER_CACHE_VERSION = 3
 
 
 @st.cache_data(show_spinner="Leyendo y agrupando el archivo…")
@@ -32,16 +34,17 @@ def load_from_bytes(file_bytes: bytes, filename: str, parser_version: int) -> di
     return parse_survey(df, filename)
 
 
+@st.cache_data(show_spinner="Leyendo y agrupando el archivo 2020…")
+def load_2020_from_bytes(file_bytes: bytes, filename: str, parser_version: int) -> dict:
+    return parse_survey_2020(file_bytes, filename)
+
+
 def load_from_path(path: Path) -> dict:
     df = pd.read_excel(path)
     return parse_survey(df, path.name)
 
 
-def load_from_uploads(uploads) -> dict:
-    datasets = [
-        load_from_bytes(upload.getvalue(), upload.name, PARSER_CACHE_VERSION)
-        for upload in uploads
-    ]
+def combine_datasets(datasets: list[dict]) -> dict:
     questions = {
         question["id"]: question
         for dataset in datasets
@@ -53,6 +56,22 @@ def load_from_uploads(uploads) -> dict:
         "encuestas_origen": sum(dataset["encuestas_origen"] for dataset in datasets),
         "preguntas": list(questions.values()),
     }
+
+
+def load_from_uploads(uploads) -> dict:
+    datasets = [
+        load_from_bytes(upload.getvalue(), upload.name, PARSER_CACHE_VERSION)
+        for upload in uploads
+    ]
+    return combine_datasets(datasets)
+
+
+def load_2020_from_uploads(uploads) -> dict:
+    datasets = [
+        load_2020_from_bytes(upload.getvalue(), upload.name, PARSER_CACHE_VERSION)
+        for upload in uploads
+    ]
+    return combine_datasets(datasets)
 
 
 def bar_chart(rows: list[tuple[str, int]]) -> alt.Chart:
@@ -201,9 +220,13 @@ st.markdown(
 with st.sidebar:
     st.title("Encuestas DCH")
     st.caption("Cargá uno o varios Excel de resultados.")
-    if "new_format_upload" not in st.session_state:
-        st.session_state.new_format_upload = False
-    if st.session_state.new_format_upload:
+    if "survey_upload_format" not in st.session_state:
+        st.session_state.survey_upload_format = (
+            "2024" if st.session_state.get("new_format_upload", False) else "legacy"
+        )
+    upload_format = st.session_state.survey_upload_format
+
+    if upload_format == "2024":
         uploads = st.file_uploader(
             "Archivo de encuestas formato 2024",
             type=["xlsx", "xls"],
@@ -211,7 +234,18 @@ with st.sidebar:
             key="new_format_files",
         )
         if st.button("Volver a carga anterior", use_container_width=True):
-            st.session_state.new_format_upload = False
+            st.session_state.survey_upload_format = "legacy"
+            st.rerun()
+    elif upload_format == "2020":
+        uploads = st.file_uploader(
+            "Archivo de encuestas formato 2020",
+            type=["xlsx"],
+            accept_multiple_files=True,
+            key="2020_format_files",
+            help="Seleccioná el libro Excel 2020 con las hojas Anuales, Primer Cuatrimestre y Segundo_Cuatrimestre.",
+        )
+        if st.button("Volver a carga anterior", use_container_width=True):
+            st.session_state.survey_upload_format = "legacy"
             st.rerun()
     else:
         uploads = st.file_uploader(
@@ -220,22 +254,26 @@ with st.sidebar:
             accept_multiple_files=True,
             key="legacy_format_files",
         )
-        if st.button(
-            "Cargar nuevo formato 2024",
-            use_container_width=True,
-            type="primary",
-        ):
-            st.session_state.new_format_upload = True
+        format_col, year_col = st.columns(2)
+        if format_col.button("Formato 2024", use_container_width=True, type="primary"):
+            st.session_state.survey_upload_format = "2024"
+            st.rerun()
+        if year_col.button("Encuesta 2020", use_container_width=True):
+            st.session_state.survey_upload_format = "2020"
             st.rerun()
     use_sample = False
-    if not uploads and SAMPLE.exists():
+    if upload_format != "2020" and not uploads and SAMPLE.exists():
         use_sample = st.checkbox("Usar anuales2023.xlsx de ejemplo", value=True)
 
 data = None
 error = None
 if uploads:
     try:
-        data = load_from_uploads(uploads)
+        data = (
+            load_2020_from_uploads(uploads)
+            if upload_format == "2020"
+            else load_from_uploads(uploads)
+        )
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
 elif use_sample:
@@ -257,7 +295,7 @@ data_questions = data["preguntas"]
 teachers = teachers_from(records)
 
 with st.sidebar:
-    st.metric("Evaluaciones", len(records))
+    st.metric("Evaluaciones", response_count(records))
     st.metric("Docentes", len(teachers))
     st.caption(f"Origen: {data['fuente']} · {data['encuestas_origen']} filas")
 
@@ -320,7 +358,7 @@ st.header(selected["nombre"])
 st.caption(" · ".join(selected["cargos"]) if selected["cargos"] else "Sin cargo informado")
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Respuestas", len(visible))
+c1.metric("Respuestas", response_count(visible))
 c2.metric("Cátedras", selected["materias"] if subject == "Todas las cátedras" else 1)
 c3.metric("Preguntas", len(data_questions))
 
