@@ -15,7 +15,7 @@ export default function App() {
   const [subject, setSubject] = useState("todas");
 
   useEffect(() => {
-    fetch("/encuestas.json")
+    fetch(`${import.meta.env.BASE_URL}encuestas.json`)
       .then((res) => {
         if (!res.ok) throw new Error("No se pudo leer encuestas.json");
         return res.json();
