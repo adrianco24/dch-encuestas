@@ -24,7 +24,7 @@ def _key(value: object) -> str:
 
 
 def _code(value: object) -> str:
-    if isinstance(value, numbers.Real) and value.is_integer():
+    if isinstance(value, numbers.Real) and float(value).is_integer():
         return str(int(value))
     return str(value).strip()
 
