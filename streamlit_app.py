@@ -182,7 +182,9 @@ def answer_summary(rows: list[tuple[str, int]], total: int) -> str:
 
 
 st.markdown(
-    """
+    "\n".join(
+        line.strip()
+        for line in """
     <style>
       .block-container { padding-top: 1.4rem; }
       h1, h2, h3 { font-weight: 650; }
@@ -213,7 +215,8 @@ st.markdown(
             .summary-item.leading { padding-block: 10px; font-size: 0.97rem; }
             .summary-item.leading strong { font-size: 1.08rem; }
     </style>
-    """,
+    """.splitlines()
+    ),
     unsafe_allow_html=True,
 )
 
